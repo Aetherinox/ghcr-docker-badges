@@ -1,6 +1,6 @@
 <div align="center">
 <h6>Self-hosted badge generation service for ghcr.io</h6>
-<h1>🔖 badges Deployment Badges 🔖</h1>
+<h1>🔖 Github Docker Deployment Badges 🔖</h1>
 
 <br />
 
