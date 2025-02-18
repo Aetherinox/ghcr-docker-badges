@@ -1,0 +1,17 @@
+# #
+#   Render > badges ghcr.io badge service
+# #
+
+version: 1
+services:
+    - type: web
+      name: badges-ghcr
+      runtime: docker
+      repo: https://github.com/Aetherinox/ghcr-docker-badges
+      plan: free
+      region: oregon
+      healthCheckPath: /health
+      dockerContext: .
+      dockerfilePath: ./Dockerfile
+      domains:
+          - badges-ghcr.egpl.dev

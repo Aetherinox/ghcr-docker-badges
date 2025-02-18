@@ -1,0 +1,352 @@
+# #
+#   @type               github workflow
+#   @author             Aetherinox
+#   @url                https://github.com/Aetherinox
+#   @usage              publishes the badges ghcr.io badge service:
+#                           - creates a new normal github release with tag
+#                           - publishes package to pypi
+#                           - publishes package as docker image to ghcr.io github registry
+#
+#   @secrets            secrets.ADMINSERV_GPG_KEY_ASC                   gpg private key (armored) | BEGIN PGP PRIVATE KEY BLOCK
+#                       secrets.ADMINSERV_GPG_PASSPHRASE                gpg private key passphrase
+#                       secrets.PYPI_API_TOKEN                          pypi api token https://pypi.org/help/#apitoken
+#                       secrets.IMAGE_DOCKERHUB_TOKEN                   hub.docker.com access token
+# #
+
+name: "📦 Deploy › Bundle"
+run-name: "📦 Deploy › Bundle"
+
+# #
+#   Triggers
+# #
+
+on:
+
+    # #
+    #   Trigger › Workflow Dispatch
+    #
+    #   If any values are not provided, will use fallback env variable
+    # #
+
+    workflow_dispatch:
+        inputs:
+
+            # #
+            #   Image Name
+            #
+            #   determines what the numerous releases are labeled as
+            # #
+
+            IMAGE_NAME:
+                description:  '📦 Image Name'
+                required:     true
+                default:      'badges-ghcr'
+                type:         string
+
+            # #
+            #   Image Author
+            # #
+
+            IMAGE_AUTHOR:
+                description:  '🪪 Image Author'
+                required:     true
+                default:      'Aetherinox'
+                type:         string
+
+            # #
+            #   Image Version
+            #
+            #   used to create new release tag, and add version to docker image name
+            # #
+
+            IMAGE_VERSION:
+                description:  '🏷️ Image Version'
+                required:     true
+                default:      '0.1.0'
+                type:         string
+
+            # #
+            #   Image ghcr username
+            #
+            #   this is the user to sign into ghcr as.
+            # #
+
+            IMAGE_GHCR_USERNAME:
+                description:  "🪪 ghcr.io Username"
+                required:     true
+                default:      'badges'
+                type:         string
+
+            # #
+            #   Pypi Service
+            #   specifies which pypi service your package is uploaded to (or skip for no upload)
+            # #
+
+            PYPI_RELEASE_TYPE:
+                description: '🐍 Upload to PyPi.org Service'
+                type: choice
+                options:
+                    - Skip
+                    - Official
+                    - Test
+
+            # #
+            #   true            no changes to the repo will be made
+            #   false           workflow will behave normally, and push any changes detected to the files
+            #
+            #   the difference between PYPI_RELEASE_TYPE and DRY_RUN is that when DRY_RUN is disabled and
+            #   PYPI_RELEASE_TYPE is set to Test, it will actually push the image to test.pypi.org.
+            #
+            #   if DRY_RUN = true, it will not push the package, no matter which pypi environment you pick.
+            # #
+
+            DRY_RUN:
+                description:    '🐛 Dry Run (Debug)'
+                required:       true
+                default:        false
+                type:           boolean
+
+            # #
+            #   true            released version will be marked as a development build and will have the v1.x.x-development tag instead of -latest
+            #   false           release version will be marked with -latest docker tag
+            # #
+
+            DEV_RELEASE:
+                description:    '🧪 Development Release'
+                required:       true
+                default:        false
+                type:           boolean
+
+# #
+#   Environment Vars
+# #
+
+env:
+    IMAGE_NAME:             ${{ github.event.inputs.IMAGE_NAME || 'badges-ghcr' }}
+    IMAGE_AUTHOR:           ${{ github.event.inputs.IMAGE_AUTHOR || 'Aetherinox' }}
+    IMAGE_VERSION:          ${{ github.event.inputs.IMAGE_VERSION || '0.1.0' }}
+    IMAGE_GHCR_USERNAME:    ${{ github.event.inputs.IMAGE_GHCR_USERNAME || 'badges' }}
+    BOT_NAME_1:             EuropaServ
+    BOT_NAME_DEPENDABOT:    dependabot[bot]
+
+# #
+#   Jobs
+# #
+
+jobs:
+
+    # #
+    #   Job › Release › Github
+    #
+    #   creates a typical github release with tag
+    # #
+
+    release-github:
+        name: >-
+            📦 Release › Github
+        runs-on: ubuntu-latest
+        steps:
+
+            # #
+            #   Release › Github › Checkout
+            # #
+
+            - name: '✅ Checkout'
+              id: task_release_github_checkout
+              uses: actions/checkout@v4
+
+            # #
+            #   Release › Github › Checkpoint › Arm64
+            # #
+
+            - name: '⚠️ Checkpoint'
+              id: task_release_github_checkpoint
+              run: |
+                  echo "registry ................................... Github"
+                  echo "github.actor................................ ${{ github.actor }}"
+                  echo "github.ref ................................. ${{ github.ref }}"
+                  echo "github.ref_name ............................ ${{ github.ref_name }}"
+                  echo "github.event_name .......................... ${{ github.event_name }}"
+                  echo "github.event.release.tag_name .............. ${{ github.event.release.tag_name }}"
+                  echo "inputs.DRY_RUN ............................. ${{ inputs.DRY_RUN }}"
+                  echo "env.AUTHOR ................................. ${{ env.IMAGE_AUTHOR }}"
+
+            # #
+            #   Release › Github › Create
+            # #
+
+            - name: '📦 Github › Create Release'
+              id: 'task_release_github_create'
+              uses: comnoco/create-release-action@v2.0.5
+              if: ( github.event_name == 'workflow_dispatch' && inputs.DRY_RUN == false ) || ( github.event_name == 'push' )
+              env:
+                  GITHUB_TOKEN: ${{ secrets.ADMINSERV_TOKEN_CL }}
+              with:
+                  tag_name: '${{ env.IMAGE_VERSION }}'
+                  release_name: '${{ env.IMAGE_VERSION }}'
+                  draft: false
+                  prerelease: false
+
+    # #
+    #   Job › Release › Pypi
+    #
+    #   releases the package on pypi
+    # #
+
+    release-pypi:
+        name: >-
+            📦 Release › Pypi
+        if: ${{ github.event.inputs.PYPI_RELEASE_TYPE != 'Skip' }}
+        runs-on: ubuntu-latest
+        needs: [ release-github ]
+        steps:
+
+            # #
+            #   Release › Pypi › Checkout
+            # #
+
+            - name: '✅ Checkout'
+              id: task_pypi_checkout
+              uses: actions/checkout@v4
+              with:
+                  persist-credentials: false
+
+            # #
+            #   Release › Pypi › Publish (Official)
+            # #
+
+            - name: '📦 Publish › Pypi › Official'
+              id: task_pypi_publish
+              uses: JRubics/poetry-publish@v2.0
+              if: ( github.event.inputs.PYPI_RELEASE_TYPE == 'Official' && inputs.DRY_RUN == false )
+              with:
+                  pypi_token: ${{ secrets.PYPI_API_TOKEN }}
+                  repository_name: ${{ env.IMAGE_NAME }}
+
+            # #
+            #   Release › Pypi › Publish (Test)
+            #
+            #   when pushing to test.pypi.org, you must supply both the pypi test API token AND the repository_url
+            #   otherwise you will get a 403 authentication error.
+            # #
+
+            - name: '📦 Publish › Pypi › Test'
+              id: task_pypi_publish_test
+              uses: JRubics/poetry-publish@v2.0
+              if: ( github.event.inputs.PYPI_RELEASE_TYPE == 'Test' && inputs.DRY_RUN == false )
+              with:
+                  pypi_token: ${{ secrets.PYPI_API_TEST_TOKEN }}
+                  repository_name: ${{ env.IMAGE_NAME }}
+                  repository_url: "https://test.pypi.org/legacy/"
+
+    # #
+    #   Job › Release › Ghcr.io
+    #
+    #   releases the docker image on the Github registry (ghcr.io)
+    # #
+
+    release-ghcr:
+        name: >-
+            📦 Release › Ghcr.io
+        runs-on: ubuntu-latest
+        needs: [ release-github ]
+        steps:
+
+            # #
+            #   Release › Ghcr.io › Checkout
+            # #
+
+            - name: '✅ Checkout'
+              id: task_release_ghcr_checkout
+              uses: actions/checkout@v4
+
+            # #
+            #   Release › Ghcr.io › QEMU
+            # #
+
+            - name: '⚙️ Set up QEMU'
+              id: task_release_ghcr_qemu
+              uses: docker/setup-qemu-action@v3
+
+            # #
+            #   Release › Ghcr.io › Build Docker Image
+            # #
+
+            - uses: docker/setup-buildx-action@v3
+              id: task_release_ghcr_buildx
+              with:
+                  install: true
+                  version: latest
+                  driver-opts: 'image=moby/buildkit:latest'
+
+            # #
+            #   Release › Ghcr.io › Registry Login
+            # #
+
+            - name: '⚙️ Login to Dockerhub'
+              id: task_release_ghcr_registry
+              uses: docker/login-action@v3
+              with:
+                  registry: ghcr.io
+                  username: ${{ env.IMAGE_GHCR_USERNAME }}
+                  password: ${{ secrets.IMAGE_GHCR_TOKEN }}
+
+            # #
+            #   Release › Ghcr.io › Build Docker Image
+            # #
+
+            - name: '🔨 Ghcr.io Meta'
+              id: task_release_ghcr_meta
+              uses: docker/metadata-action@v5
+              with:
+                  images: |
+                      ghcr.io/${{ env.IMAGE_AUTHOR }}/${{ env.IMAGE_NAME }}
+                  tags: |
+                      #  latest yes
+                      type=raw,value=latest,enable=${{ !inputs.DEV_RELEASE }}
+                      #  dispatch       add 1.x.x
+                      type=raw,enable=${{ github.event_name == 'workflow_dispatch' && inputs.DEV_RELEASE == false }},priority=300,prefix=,suffix=,value=${{ env.IMAGE_VERSION }}
+                      #  dispatch       add development
+                      type=raw,enable=${{ github.event_name == 'workflow_dispatch' && inputs.DEV_RELEASE == true }},priority=300,prefix=,suffix=,value=development
+                      #  tag            add tag-1.x.x
+                      type=ref,enable=${{ github.event_name == 'pull_request' || github.event_name == 'push'}},priority=600,prefix=,suffix=,event=tag
+                      #  add development tag
+                      type=raw,enable=${{ inputs.DEV_RELEASE }},priority=400,prefix=,suffix=,value=development
+                  flavor: |
+                      latest=${{ !inputs.DEV_RELEASE }}
+
+            # #
+            #   Release › Github › Checkpoint › Arm64
+            # #
+
+            - name: '⚠️ Checkpoint'
+              id: task_release_ghcr_checkpoint
+              run: |
+                  echo "registry ............. Github"
+                  echo "github.actor.......... ${{ github.actor }}"
+                  echo "github.ref ........... ${{ github.ref }}"
+                  echo "github.ref_name ...... ${{ github.ref_name }}"
+                  echo "github.event_name .... ${{ github.event_name }}"
+                  echo "inputs.DRY_RUN ....... ${{ inputs.DRY_RUN }}"
+                  echo "env.AUTHOR ........... ${{ env.IMAGE_AUTHOR }}"
+                  echo "tags ................. ${{ steps.task_release_ghcr_meta.outputs.tags }}"
+                  echo "labels ............... ${{ steps.task_release_ghcr_meta.outputs.labels }}"
+
+            # #
+            #   Release › Ghcr.io › Build and Push
+            # #
+
+            - name: '📦 Publish › Docker Image › ghcr.io'
+              id: task_release_ghcr_push
+              uses: docker/build-push-action@v6
+              if: ( github.event_name == 'workflow_dispatch' && inputs.DRY_RUN == false ) || ( github.event_name == 'push' )
+              with:
+                  context: .
+                  file: Dockerfile
+                  push: ${{ github.event_name != 'pull_request' }}
+                  tags: ${{ steps.task_release_ghcr_meta.outputs.tags }}
+                  labels: ${{ steps.task_release_ghcr_meta.outputs.labels }}
+                  build-args: |
+                      VERSION=${{ env.IMAGE_VERSION }}
+
+
