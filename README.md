@@ -61,7 +61,7 @@ You can deploy this **[ghcr.io](https://ghcr.io)** badge service on **[Render](h
 
 <br />
 
-<p align="center"><a href="https://render.com/deploy?repo=https://github.com/aetherinox/ghcr-docker-badges-badges-ghcr"><img style="text-align: center;" src="https://render.com/images/deploy-to-render-button.svg"></a></p>
+<p align="center"><a href="https://render.com/deploy?repo=https://github.com/Aetherinox/ghcr-docker-badges"><img style="text-align: center;" src="https://render.com/images/deploy-to-render-button.svg"></a></p>
 
 <br />
 
